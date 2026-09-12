@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+ <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+ <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+ <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+ <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+ <application android:theme="@style/Theme.App" android:label="O.status" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+  <activity android:name=".DetailsActivity" android:exported="false"/>
+  <activity android:name=".PositionSizeActivity" android:exported="false"/>
+  <activity android:name=".MainActivity" android:exported="true">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity>
+  <service android:name=".StatusBarService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
+   <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Persistent user-enabled status indicator overlay"/>
+  </service>
+  <receiver android:name=".TaskRecoveryReceiver" android:enabled="true" android:exported="false"/>
+  <receiver android:name=".BootReceiver" android:enabled="true" android:exported="false" android:directBootAware="true">
+   <intent-filter>
+    <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+    <action android:name="android.intent.action.BOOT_COMPLETED"/>
+    <action android:name="android.intent.action.USER_UNLOCKED"/>
+    <action android:name="android.intent.action.USER_PRESENT"/>
+    <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+   </intent-filter>
+  </receiver>
+ </application>
+</manifest>
