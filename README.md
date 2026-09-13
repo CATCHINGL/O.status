@@ -6,6 +6,24 @@ A clean and minimal Android status indicator for cellular, Wi-Fi and battery sta
   <img src="assets/o.status-home.jpg" width="420" alt="O.status on Android">
 </p>
 
+## ⚙️ Recommended Setup
+
+For the cleanest O.status experience, it is recommended to hide your phone's original **Wi-Fi, Mobile Signal and Battery icons** from the system status bar.
+
+The method varies depending on your Android device and manufacturer.
+
+### Samsung Galaxy
+
+On Samsung One UI, you can use **Good Lock → QuickStar → Visibility of Indicator Icons** to hide the original:
+
+- Wi-Fi
+- Mobile Signal
+- Battery
+
+You can also move or adjust the system clock in QuickStar to better match your preferred O.status position.
+
+> O.status does not automatically modify or remove your system status bar icons.
+
 ## ✨ Features
 
 - Real-time Wi-Fi signal strength
