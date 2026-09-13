@@ -20,7 +20,8 @@ import kotlin.math.min
 
 class DuoIndicatorView(
     ctx: Context,
-    private val colorMode: String
+    private val colorMode: String,
+    private val batteryPercentageEnabled: Boolean = false
 ) : View(ctx) {
 
     var batteryPercent = 0
@@ -130,22 +131,72 @@ class DuoIndicatorView(
 
         val cx = X(237f); val cy = Y(211f); val r = 163f * s
         val rect = RectF(cx-r, cy-r, cx+r, cy+r)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 26f * s
-        paint.strokeCap = Paint.Cap.ROUND
-        val start = 151.5f; val sweep = 237f
-        paint.color = inactive
-        c.drawArc(rect, start, sweep, false, paint)
 
         val batteryProgressColor = when {
             batteryPercent >= 100 -> Color.rgb(52,199,89)
-            charging -> Color.rgb(0,122,255)
+            charging -> Color.rgb(52,199,89)
             powerSaveMode -> Color.rgb(255,204,0)
             batteryPercent <= 20 -> Color.rgb(255,59,48)
             else -> active
         }
-        paint.color = batteryProgressColor
-        c.drawArc(rect, start, sweep * (batteryPercent.coerceIn(0,100)/100f), false, paint)
+        val showBatteryPercentage = batteryPercentageEnabled || batteryPercent <= 20
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 26f * s
+        paint.strokeCap = Paint.Cap.ROUND
+
+        if (!showBatteryPercentage) {
+            val start = 151.5f
+            val sweep = 237f
+            paint.color = inactive
+            c.drawArc(rect, start, sweep, false, paint)
+            paint.color = batteryProgressColor
+            c.drawArc(rect, start, sweep * (batteryPercent.coerceIn(0,100)/100f), false, paint)
+        } else {
+            // Percentage mode is derived from the ORIGINAL locked C-ring.
+            // Same centre, radius, stroke and LOWER ENDPOINTS. Only the top
+            // portion is opened to make room for the battery number.
+            val originalStart = 151.5f
+            val originalEnd = 151.5f + 237f
+
+            // Top opening boundaries. These alter only the upper portion of the
+            // original track; the lower endpoints remain exactly at 151.5°/388.5°.
+            val isFullBattery = batteryPercent >= 100
+            val leftTopEnd = if (isFullBattery) 231f else 236f
+            val rightTopStart = if (isFullBattery) 309f else 304f
+            val leftSweep = leftTopEnd - originalStart
+            val rightSweep = originalEnd - rightTopStart
+
+            paint.color = inactive
+            c.drawArc(rect, originalStart, leftSweep, false, paint)
+            c.drawArc(rect, rightTopStart, rightSweep, false, paint)
+
+            // Preserve the original battery-progress direction and total 237°
+            // scale. The hidden top gap simply clips the part that would pass
+            // behind the number.
+            val progressEnd = originalStart +
+                237f * (batteryPercent.coerceIn(0,100) / 100f)
+            paint.color = batteryProgressColor
+
+            val leftProgressEnd = minOf(progressEnd, leftTopEnd)
+            if (leftProgressEnd > originalStart) {
+                c.drawArc(rect, originalStart, leftProgressEnd-originalStart, false, paint)
+            }
+            if (progressEnd > rightTopStart) {
+                val rightProgressEnd = minOf(progressEnd, originalEnd)
+                c.drawArc(rect, rightTopStart, rightProgressEnd-rightTopStart, false, paint)
+            }
+
+            // Keep the user-approved number scale from the previous preview.
+            paint.style = Paint.Style.FILL
+            paint.color = active
+            paint.textAlign = Paint.Align.CENTER
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = 92f * s
+            val fmBattery = paint.fontMetrics
+            val batteryTextY = Y(60f) - (fmBattery.ascent + fmBattery.descent)/2f
+            c.drawText(batteryPercent.coerceIn(0,100).toString(), X(237f), batteryTextY, paint)
+        }
 
         // Locked cellular-dot geometry.
         val dots = arrayOf(Pair(143f,342f), Pair(202f,372f), Pair(272f,372f), Pair(331f,342f))

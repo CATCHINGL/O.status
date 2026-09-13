@@ -12,7 +12,6 @@ import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.TrafficStats
-import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
@@ -20,7 +19,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.provider.Settings
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.view.Gravity
@@ -96,11 +94,13 @@ class DetailsActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply { setBackgroundColor(pageColor); isFillViewport = true }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(38), dp(20), dp(28)) }
 
-        val back = TextView(this).apply {
-            text = "‹"; textSize = 24f; setTextColor(Color.rgb(0,122,255)); setPadding(dp(2), dp(4), 0, dp(8))
+        val back = BackChevronView(this).apply {
             setOnClickListener { finish() }
         }
-        content.addView(back)
+        content.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            marginStart = -dp(12)
+            bottomMargin = dp(2)
+        })
         content.addView(TextView(this).apply {
             text = "Details"; textSize = 34f; setTextColor(primary); typeface = Typeface.create("sans-serif", Typeface.BOLD)
             setPadding(dp(2), 0, 0, dp(4))
@@ -110,12 +110,9 @@ class DetailsActivity : AppCompatActivity() {
         section(content, "WI-FI", listOf("Wi-Fi" to wifiSummary()))
         section(content, "MOBILE", mobileRows())
         networkSpeedSection(content)
-        section(content, "SYSTEM", listOf(
-            "Airplane Mode" to if (Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1) "On" else "Off",
-            "Do Not Disturb" to if (isDndOn()) "On" else "Off"
-        ))
 
         scroll.addView(content)
+        GeistTypography.apply(scroll)
         setContentView(scroll)
     }
 
@@ -133,7 +130,7 @@ class DetailsActivity : AppCompatActivity() {
         }
         val pm = getSystemService(android.os.PowerManager::class.java)
         if (pm.isPowerSaveMode) parts += "Power Saving"
-        return if (parts.isEmpty()) "Unavailable" else parts.joinToString(" · ")
+        return if (parts.isEmpty()) "Unavailable" else parts.joinToString("   ")
     }
 
     private fun wifiSummary(): String {
@@ -153,7 +150,7 @@ class DetailsActivity : AppCompatActivity() {
         } else "Wi-Fi"
         val level = WifiManager.calculateSignalLevel(info.rssi, 5)
         val quality = when (level) { 4 -> "Excellent"; 3 -> "Good"; 2 -> "Fair"; else -> "Weak" }
-        return "$standard · $quality"
+        return "$standard   $quality"
     }
 
     private fun mobileRows(): List<Pair<String,String>> {
@@ -169,14 +166,14 @@ class DetailsActivity : AppCompatActivity() {
             val tm = base.createForSubscriptionId(sub.subscriptionId)
             val carrier = sub.carrierName?.toString()?.trim().orEmpty().ifEmpty { "SIM ${sub.simSlotIndex + 1}" }
             val isData = sub.subscriptionId == defaultData
-            val title = if (isData) "SIM ${sub.simSlotIndex + 1} · DATA" else "SIM ${sub.simSlotIndex + 1}"
+            val title = if (isData) "SIM ${sub.simSlotIndex + 1}  DATA" else "SIM ${sub.simSlotIndex + 1}"
             val network = try { NetworkDisplayTracker.label(networkTrackers[sub.subscriptionId]?.displayInfo, tm.dataNetworkType) } catch (_: Exception) { "" }
             val level = try { tm.signalStrength?.level?.coerceIn(0,4) ?: 0 } catch (_: Exception) { 0 }
-            val dots = "●".repeat(level) + "○".repeat(4-level)
+            val dots = (0 until 4).joinToString("\u2009") { if (it < level) "●" else "○" }
             val valueParts = mutableListOf(carrier)
             if (network.isNotEmpty()) valueParts += network
             valueParts += dots
-            title to valueParts.joinToString(" · ")
+            title to valueParts.joinToString("   ")
         }
     }
 

@@ -6,8 +6,8 @@ android {
   applicationId="com.catch7ng.ostatus"
   minSdk=29
   targetSdk=35
-  versionCode=34
-  versionName="1.0.0"
+  versionCode = 41
+  versionName = "1.3.0"
  }
  compileOptions {
   sourceCompatibility=JavaVersion.VERSION_17

@@ -2,6 +2,7 @@ package com.catch7ng.ostatus
 
 import android.Manifest
 import android.app.NotificationManager
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -12,9 +13,9 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
@@ -25,7 +26,6 @@ class MainActivity : AppCompatActivity() {
     private var phoneValue: TextView? = null
     private var dndValue: TextView? = null
     private var colorValue: TextView? = null
-    private var suppressSwitch = false
 
     private val dark get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     private val pageColor get() = if (dark) Color.BLACK else Color.rgb(242,242,247)
@@ -33,7 +33,6 @@ class MainActivity : AppCompatActivity() {
     private val primary get() = if (dark) Color.WHITE else Color.BLACK
     private val secondary get() = if (dark) Color.rgb(142,142,147) else Color.rgb(99,99,102)
     private val separator get() = if (dark) Color.rgb(56,56,58) else Color.rgb(229,229,234)
-    private val iosBlue = Color.rgb(0,122,255)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +45,25 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); refreshPermissionStates() }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply { setBackgroundColor(pageColor); isFillViewport = true }
+        val scroll = object : ScrollView(this) {
+            private fun hasScrollableContent(): Boolean =
+                canScrollVertically(-1) || canScrollVertically(1)
+
+            override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
+                if (!hasScrollableContent()) return false
+                return super.onInterceptTouchEvent(ev)
+            }
+
+            override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
+                if (!hasScrollableContent()) return false
+                return super.onTouchEvent(ev)
+            }
+        }.apply {
+            setBackgroundColor(pageColor)
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(46), dp(20), dp(28))
@@ -62,36 +79,53 @@ class MainActivity : AppCompatActivity() {
         sectionTitle(content, "O STATUS BAR")
         val mainCard = card()
         val onRow = row("O Status Bar")
-        val enabledSwitch = SwitchCompat(this).apply {
-            isChecked = prefs.getBoolean("duo_enabled", true)
-            showText = false
-            setOnCheckedChangeListener { _, checked ->
-                if (suppressSwitch) return@setOnCheckedChangeListener
-                if (checked && !Settings.canDrawOverlays(this@MainActivity)) {
-                    suppressSwitch = true; isChecked = false; suppressSwitch = false
+        val enabledSwitch = OStatusSwitch(this).apply {
+            isOn = prefs.getBoolean("duo_enabled", true)
+            onToggleRequested = { requested ->
+                if (requested && !Settings.canDrawOverlays(this@MainActivity)) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                    return@setOnCheckedChangeListener
+                    false
+                } else {
+                    prefs.edit().putBoolean("duo_enabled", requested).apply()
+                    BootPrefs.setEnabled(this@MainActivity, requested)
+                    if (requested) ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, StatusBarService::class.java))
+                    else stopService(Intent(this@MainActivity, StatusBarService::class.java))
+                    true
                 }
-                prefs.edit().putBoolean("duo_enabled", checked).apply()
-                BootPrefs.setEnabled(this@MainActivity, checked)
-                if (checked) ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, StatusBarService::class.java))
-                else stopService(Intent(this@MainActivity, StatusBarService::class.java))
             }
         }
-        onRow.addView(enabledSwitch)
+        onRow.addView(enabledSwitch, LinearLayout.LayoutParams(dp(51), dp(31)))
+        onRow.setOnClickListener { enabledSwitch.requestToggle() }
         mainCard.addView(onRow)
         content.addView(mainCard)
 
         sectionTitle(content, "APPEARANCE")
         val appearance = card()
         val colorRow = row("Indicator Colour")
-        colorValue = valueLabel(colorName())
+        colorValue = colourChoiceLabel(colorName())
         colorRow.addView(colorValue)
-        colorRow.setOnClickListener { showColorPicker() }
+        colorRow.setOnClickListener { cycleIndicatorColour() }
         appearance.addView(colorRow)
         appearance.addView(separatorView())
+        val batteryPercentageRow = row("Battery Percentage")
+        val batteryPercentageSwitch = OStatusSwitch(this).apply {
+            isOn = prefs.getBoolean("battery_percentage", false)
+            onToggleRequested = { requested ->
+                prefs.edit().putBoolean("battery_percentage", requested).apply()
+                BootPrefs.setBatteryPercentage(this@MainActivity, requested)
+                if (prefs.getBoolean("duo_enabled", true) && Settings.canDrawOverlays(this@MainActivity)) {
+                    stopService(Intent(this@MainActivity, StatusBarService::class.java))
+                    ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, StatusBarService::class.java))
+                }
+                true
+            }
+        }
+        batteryPercentageRow.addView(batteryPercentageSwitch, LinearLayout.LayoutParams(dp(51), dp(31)))
+        batteryPercentageRow.setOnClickListener { batteryPercentageSwitch.requestToggle() }
+        appearance.addView(batteryPercentageRow)
+        appearance.addView(separatorView())
         val positionRow = row("Position & Size")
-        positionRow.addView(valueLabel("›").apply { textSize = 25f })
+        positionRow.addView(ForwardChevronView(this), LinearLayout.LayoutParams(dp(18), dp(32)))
         positionRow.setOnClickListener { startActivity(Intent(this, PositionSizeActivity::class.java)) }
         appearance.addView(positionRow)
         content.addView(appearance)
@@ -110,77 +144,63 @@ class MainActivity : AppCompatActivity() {
 
         sectionTitle(content, "OPTIONS")
         val options = card()
-        val bootRow = row("Start on Boot")
-        bootRow.addView(valueLabel("On")); options.addView(bootRow)
-        options.addView(separatorView())
         val detailsRow = row("Details")
-        detailsRow.addView(valueLabel("›").apply { textSize = 25f })
+        detailsRow.addView(ForwardChevronView(this), LinearLayout.LayoutParams(dp(18), dp(32)))
         detailsRow.setOnClickListener { startActivity(Intent(this, DetailsActivity::class.java)) }
         options.addView(detailsRow)
-        options.addView(separatorView())
-        val diagRow = row("Diagnostics")
-        diagRow.addView(valueLabel("›").apply { textSize = 25f })
-        diagRow.setOnClickListener { showDiagnostics() }
-        options.addView(diagRow)
         content.addView(options)
 
-        content.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(34), 0, dp(10))
-
-            addView(TextView(this@MainActivity).apply {
-                text = "O.status ${displayVersion()}\n© 2026 CATCH7NG.L · All Rights Reserved"
-                textSize = 11.5f
-                setTextColor(secondary)
-                gravity = Gravity.CENTER
-            })
-
-            addView(TextView(this@MainActivity).apply {
-                text = "GitHub · CATCHINGL"
-                textSize = 11.5f
-                setTextColor(iosBlue)
-                gravity = Gravity.CENTER
-                setPadding(0, dp(7), 0, 0)
+            setPadding(0, dp(22), 0, dp(8))
+        }
+        fun footerText(value: String, clickable: Boolean = false) = TextView(this).apply {
+            text = value
+            textSize = 11.5f
+            setTextColor(secondary)
+            gravity = Gravity.CENTER
+            if (clickable) {
                 setOnClickListener {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/CATCHINGL")))
                 }
-            })
-        })
+            }
+        }
+        footer.addView(footerText("V${displayVersion()}"))
+        footer.addView(footerText("  ·  "))
+        footer.addView(footerText("GitHub", true))
+        footer.addView(footerText("  ·  "))
+        footer.addView(footerText("© 2026 CATCH7NG.L"))
+        content.addView(footer)
 
         scroll.addView(content)
+        scroll.viewTreeObserver.addOnGlobalLayoutListener {
+            val child = scroll.getChildAt(0)
+            val fits = child != null && child.height <= scroll.height
+            scroll.setOnTouchListener(if (fits) View.OnTouchListener { _, _ -> true } else null)
+        }
+        GeistTypography.apply(scroll)
         setContentView(scroll)
         refreshPermissionStates()
     }
 
-    private fun showColorPicker() {
-        val labels = arrayOf("Auto", "Black", "White")
-        val keys = arrayOf("auto", "black", "white")
-        val current = keys.indexOf(prefs.getString("color_mode", "auto")).coerceAtLeast(0)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Indicator Colour")
-            .setSingleChoiceItems(labels, current) { dialog, which ->
-                prefs.edit().putString("color_mode", keys[which]).apply()
-                colorValue?.text = labels[which]
-                if (prefs.getBoolean("duo_enabled", true) && Settings.canDrawOverlays(this)) {
-                    stopService(Intent(this, StatusBarService::class.java))
-                    ContextCompat.startForegroundService(this, Intent(this, StatusBarService::class.java))
-                }
-                dialog.dismiss()
-            }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun showDiagnostics() {
-        val phone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-        val msg = buildString {
-            append("O.status ${displayVersion()}\n\n")
-            append("Overlay permission: ${Settings.canDrawOverlays(this@MainActivity)}\n")
-            append("Phone permission: $phone\n")
-            append("DND access: ${getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted}\n\n")
-            append("Colour mode: ${colorName()}\n")
-            append("O Status Bar enabled: ${prefs.getBoolean("duo_enabled", true)}")
+    private fun cycleIndicatorColour() {
+        val current = prefs.getString("color_mode", "auto") ?: "auto"
+        val next = when (current) {
+            "auto" -> "black"
+            "black" -> "white"
+            else -> "auto"
         }
-        androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(msg).setPositiveButton("Done", null).show()
+        prefs.edit().putString("color_mode", next).apply()
+        colorValue?.text = when (next) {
+            "black" -> "Black"
+            "white" -> "White"
+            else -> "Auto"
+        }
+        if (prefs.getBoolean("duo_enabled", true) && Settings.canDrawOverlays(this)) {
+            stopService(Intent(this, StatusBarService::class.java))
+            ContextCompat.startForegroundService(this, Intent(this, StatusBarService::class.java))
+        }
     }
 
     private fun refreshPermissionStates() {
@@ -191,11 +211,90 @@ class MainActivity : AppCompatActivity() {
 
     private fun setPermission(v: TextView, granted: Boolean) {
         v.text = if (granted) "Allowed" else "Required  ›"
-        v.setTextColor(if (granted) secondary else iosBlue)
+        v.setTextColor(if (granted) secondary else primary)
+    }
+
+    private inner class OStatusSwitch(context: android.content.Context) : View(context) {
+        var isOn: Boolean = false
+            set(value) {
+                field = value
+                progress = if (value) 1f else 0f
+                invalidate()
+            }
+
+        var onToggleRequested: ((Boolean) -> Boolean)? = null
+        private var progress = 0f
+        private var animator: ValueAnimator? = null
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        init {
+            isClickable = true
+            isFocusable = true
+            contentDescription = "O Status Bar"
+            setOnClickListener { requestToggle() }
+        }
+
+        fun requestToggle() {
+            val requested = !isOn
+            val accepted = onToggleRequested?.invoke(requested) ?: true
+            if (accepted) setOnAnimated(requested)
+        }
+
+        private fun setOnAnimated(value: Boolean) {
+            if (isOn == value) return
+            val start = progress
+            isOn = value
+            progress = start
+            val target = if (value) 1f else 0f
+            animator?.cancel()
+            animator = ValueAnimator.ofFloat(start, target).apply {
+                duration = 180L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    progress = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+
+            // Monochrome O.status switch: neutral OFF, black/white ON depending theme.
+            val offTrack = if (dark) Color.rgb(58,58,60) else Color.rgb(229,229,234)
+            val onTrack = if (dark) Color.WHITE else Color.BLACK
+            paint.color = blend(offTrack, onTrack, progress)
+            canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, paint)
+
+            val pad = dp(2).toFloat()
+            val radius = (h - pad * 2f) / 2f
+            val leftCx = pad + radius
+            val rightCx = w - pad - radius
+            val cx = leftCx + (rightCx - leftCx) * progress
+
+            paint.color = if (dark && progress > .5f) Color.BLACK else Color.WHITE
+            paint.setShadowLayer(dp(1).toFloat(), 0f, dp(1).toFloat(), 0x33000000)
+            setLayerType(LAYER_TYPE_SOFTWARE, paint)
+            canvas.drawCircle(cx, h / 2f, radius, paint)
+            paint.clearShadowLayer()
+        }
+
+        private fun blend(a: Int, b: Int, t: Float): Int {
+            val clamped = t.coerceIn(0f, 1f)
+            return Color.rgb(
+                (Color.red(a) + (Color.red(b) - Color.red(a)) * clamped).toInt(),
+                (Color.green(a) + (Color.green(b) - Color.green(a)) * clamped).toInt(),
+                (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * clamped).toInt()
+            )
+        }
     }
 
     private fun displayVersion(): String {
-        val raw = packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0"
+        val raw = packageManager.getPackageInfo(packageName, 0).versionName ?: "1.3.0"
         return raw
     }
 
@@ -234,6 +333,20 @@ class MainActivity : AppCompatActivity() {
     private fun valueLabel(value: String) = TextView(this).apply {
         text = value; textSize = 15f; setTextColor(secondary); gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), 0, 0, 0)
+    }
+
+    private fun colourChoiceLabel(value: String) = TextView(this).apply {
+        text = value
+        textSize = 14f
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        setPadding(dp(12), 0, dp(12), 0)
+        minWidth = dp(64)
+        minimumHeight = dp(32)
+        background = GradientDrawable().apply {
+            setColor(if (dark) Color.rgb(58,58,60) else Color.rgb(44,44,46))
+            cornerRadius = dp(9).toFloat()
+        }
     }
 
     private fun separatorView() = View(this).apply {
