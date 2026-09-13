@@ -1,41 +1,51 @@
 # O.status
 
-O.status is a lightweight Android status indicator overlay focused on showing essential device status in a compact, minimal form.
+A clean and minimal Android status indicator for cellular, Wi-Fi and battery status.
 
-**Current release: 1.2.2**
+<p align="center">
+  <img src="assets/o.status-home.jpg" width="420" alt="O.status on Android">
+</p>
 
-## Features
+## ✨ Features
 
-- Compact status indicator
-- Battery level ring with charging, low-battery, power-saving and full-charge states
-- Wi-Fi signal display
-- Default Data SIM cellular signal display
-- 4G / 5G display, including Android 5G NSA display information
-- Dual-SIM details
-- Real-time network download and upload speed
-- Automatic Black / White indicator following Android Light / Dark Mode
-- Quick Auto / Black / White colour selection
-- Left / Right status bar positioning
-- Expanded horizontal and vertical position adjustment
-- Dynamic screen-boundary protection
-- Extended size adjustment
+- Real-time Wi-Fi signal strength
+- Default Data SIM signal strength
+- 4G / 5G network status
+- Battery level and Battery Percentage
+- Automatic battery percentage display at 20% or below
+- Charging and fully charged battery status
+- Low battery and Power Saving status
+- Automatic Light / Dark Mode appearance
+- Manual Black / White indicator colour
+- Left / Right positioning
+- Adjustable position and size
 - Do Not Disturb avoidance
-- Pixel Shifting for AMOLED burn-in protection
-- Geist interface typography
-- Simplified monochrome interface
-- Automatic start on boot
-- Background service recovery
+- Pixel Shifting to help reduce the risk of AMOLED burn-in
+- Automatic hide in full screen
+- Automatic start after reboot
+- Background recovery
+- Detailed battery, Wi-Fi, mobile and network speed information
 
-## Burn-in Protection
+<p align="center">
+  <img src="assets/o.status-settings.jpg" width="420" alt="O.status Settings">
+</p>
 
-O.status includes Pixel Shifting to help reduce the risk of AMOLED burn-in.
+## 🔐 Permissions
 
-The status indicator subtly changes position over time while preserving the user's selected position and size. Movement is automatically constrained within the current display boundaries.
+O.status only uses the permissions required for its core functions:
 
-## Source Code
+- Display Over Apps
+- Phone Status
+- Do Not Disturb Access
+
+No Location, Usage Access or Accessibility permission is required.
+
+## 🚀 Latest Version
+
+**O.status v1.3.0**
+
+## 📄 Source Code
 
 Source Code Available for Reference.
-
-The source code is provided for viewing, study and educational reference only.
 
 © 2026 CATCH7NG.L · All Rights Reserved
