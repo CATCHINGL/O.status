@@ -18,14 +18,7 @@ class StatusBarService : Service() {
     private var isLeftSide = false
     private var autoHideInFullScreen = true
     private var hiddenForFullScreen = false
-
-    private val fullScreenHandler = Handler(Looper.getMainLooper())
-    private val fullScreenRunnable = object : Runnable {
-        override fun run() {
-            updateFullScreenVisibility()
-            fullScreenHandler.postDelayed(this, 350L)
-        }
-    }
+    private var shizukuAppearanceManager: ShizukuAppearanceManager? = null
 
     // Burn-in protection: move the overlay by a tiny, temporary offset over time.
     // User-saved Position & Size values are never modified.
@@ -103,17 +96,17 @@ class StatusBarService : Service() {
         }
     }
 
-    private val dndHandler = Handler(Looper.getMainLooper())
     private var lastDndOn: Boolean? = null
-    private val dndFallback = object : Runnable {
-        override fun run() {
-            updateAvoidance()
-            dndHandler.postDelayed(this, 500L)
-        }
-    }
+    private var dndReceiverRegistered = false
 
     private fun updateAvoidance() {
         if (!::wm.isInitialized || !::v.isInitialized || !::lp.isInitialized) return
+        // Left position never uses DND avoidance, so do not even read DND state.
+        if (isLeftSide) {
+            lastDndOn = false
+            applyTemporaryPosition()
+            return
+        }
         val nm = getSystemService(NotificationManager::class.java)
         val dndOn = try {
             when (nm.currentInterruptionFilter) {
@@ -189,10 +182,19 @@ class StatusBarService : Service() {
     }
 
     private fun startFullScreenWatcher() {
-        fullScreenHandler.removeCallbacks(fullScreenRunnable)
         hiddenForFullScreen = false
-        if (::v.isInitialized) v.alpha = 1f
-        fullScreenHandler.post(fullScreenRunnable)
+        if (!::v.isInitialized) return
+        v.alpha = 1f
+
+        // Event-driven fullscreen detection. The overlay remains attached (alpha only),
+        // so it can continue receiving WindowInsets changes when the system status bar
+        // is hidden or restored. No periodic fullscreen polling is required.
+        v.setOnApplyWindowInsetsListener { view, insets ->
+            updateFullScreenVisibility()
+            insets
+        }
+        v.requestApplyInsets()
+        v.post { updateFullScreenVisibility() }
     }
 
 
@@ -208,6 +210,78 @@ class StatusBarService : Service() {
         }
     }
 
+    private fun resolvedColorMode(): String {
+        val pref = getSharedPreferences("settings", MODE_PRIVATE)
+        val mode = pref.getString("color_mode", null)
+        return when {
+            mode != null -> mode
+            pref.contains("black5") -> if (pref.getBoolean("black5", false)) "black" else "white"
+            else -> "auto"
+        }
+    }
+
+    private fun refreshColorMode() {
+        if (!::v.isInitialized) return
+        val resolvedMode = resolvedColorMode()
+        v.setColorMode(resolvedMode)
+
+        if (resolvedMode == "auto") {
+            if (shizukuAppearanceManager == null) {
+                shizukuAppearanceManager = ShizukuAppearanceManager(this) { black ->
+                    Handler(Looper.getMainLooper()).post {
+                        if (::v.isInitialized) v.setShizukuAutoBlack(black)
+                    }
+                }.also { it.start() }
+            }
+        } else {
+            shizukuAppearanceManager?.stop()
+            shizukuAppearanceManager = null
+            v.setShizukuAutoBlack(null)
+        }
+    }
+
+    private fun registerDndReceiverIfNeeded() {
+        if (dndReceiverRegistered || isLeftSide) return
+        val dndFilter = IntentFilter(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(dndRx, dndFilter, RECEIVER_NOT_EXPORTED)
+        else @Suppress("DEPRECATION") registerReceiver(dndRx, dndFilter)
+        dndReceiverRegistered = true
+    }
+
+    private fun unregisterDndReceiverIfNeeded() {
+        if (!dndReceiverRegistered) return
+        try { unregisterReceiver(dndRx) } catch (_: Exception) {}
+        dndReceiverRegistered = false
+    }
+
+    private fun refreshLayoutFromPrefs() {
+        if (!::wm.isInitialized || !::v.isInitialized || !::lp.isInitialized) return
+        val pref = getSharedPreferences("settings", MODE_PRIVATE)
+        val density = resources.displayMetrics.density
+        val newLeftSide = pref.getString("duo_side", "right") == "left"
+
+        if (newLeftSide != isLeftSide) {
+            isLeftSide = newLeftSide
+            lp.gravity = Gravity.TOP or if (isLeftSide) Gravity.START else Gravity.END
+            if (isLeftSide) {
+                unregisterDndReceiverIfNeeded()
+                lastDndOn = false
+            } else {
+                registerDndReceiverIfNeeded()
+                lastDndOn = null
+                updateAvoidance() // one immediate read when entering Right
+            }
+        }
+
+        val baseScale = .62f + pref.getInt("size5", 24) / 200f
+        val scale = baseScale * 1.56f * (pref.getInt("duo_scale_v3_pct", 100) / 100f)
+        lp.width = (36 * density * scale).toInt()
+        lp.height = (36 * density * scale).toInt()
+        clampUserPosition(density)
+        applyTemporaryPosition()
+        try { wm.updateViewLayout(v, lp) } catch (_: Exception) {}
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
@@ -216,15 +290,15 @@ class StatusBarService : Service() {
         if (!BootPrefs.isEnabled(this)) { stopSelf(); return }
 
         val nm=getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("duo5","Duo overlay",NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("duo5","O.status overlay",NotificationManager.IMPORTANCE_LOW))
         startForeground(5,Notification.Builder(this,"duo5").setContentTitle("O.status").setContentText("Active").setSmallIcon(android.R.drawable.ic_menu_info_details).build())
 
         val d=resources.displayMetrics.density
         val baseScale=.62f+pref.getInt("size5",24)/200f
         val scale=baseScale * 1.56f * (pref.getInt("duo_scale_v3_pct",100)/100f)
-        val mode=pref.getString("color_mode","legacy") ?: "legacy"
-        val resolvedMode = if (mode=="legacy") { if(pref.getBoolean("black5",false)) "black" else "white" } else mode
+        val resolvedMode = resolvedColorMode()
         v=DuoIndicatorView(this, resolvedMode, pref.getBoolean("battery_percentage", BootPrefs.batteryPercentage(this)))
+        refreshColorMode()
         wm=getSystemService(WINDOW_SERVICE) as WindowManager
         baseMarginPx=((pref.getInt("margin5",7) + pref.getInt("duo_h_offset",0))*d).toInt()
         isLeftSide = pref.getString("duo_side","right") == "left"
@@ -243,18 +317,28 @@ class StatusBarService : Service() {
         wm.addView(v,lp)
         overlayAttached = true
         registerReceiver(batteryRx,IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val dndFilter = IntentFilter(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(dndRx, dndFilter, RECEIVER_NOT_EXPORTED)
-        else @Suppress("DEPRECATION") registerReceiver(dndRx, dndFilter)
-        updateAvoidance()
-        dndHandler.removeCallbacks(dndFallback)
-        dndHandler.post(dndFallback)
+        // DND avoidance only applies on the right. Right side is event-driven: read
+        // current state once, then wait for Android's interruption-filter broadcast.
+        // Left side performs no DND read and registers no DND receiver at all.
+        if (!isLeftSide) {
+            registerDndReceiverIfNeeded()
+            updateAvoidance()
+        } else {
+            lastDndOn = false
+            applyTemporaryPosition()
+        }
         startPixelShifting()
         startFullScreenWatcher()
         v.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        refreshColorMode()
+        if (::v.isInitialized) {
+            val pref = getSharedPreferences("settings", MODE_PRIVATE)
+            v.setBatteryPercentageEnabled(pref.getBoolean("battery_percentage", BootPrefs.batteryPercentage(this)))
+        }
+        refreshLayoutFromPrefs()
         ensureOverlayAttached()
         return START_STICKY
     }
@@ -272,10 +356,11 @@ class StatusBarService : Service() {
     }
     override fun onDestroy() {
         try{unregisterReceiver(batteryRx)}catch(_:Exception){}
-        try{unregisterReceiver(dndRx)}catch(_:Exception){}
-        dndHandler.removeCallbacks(dndFallback)
+        unregisterDndReceiverIfNeeded()
         pixelShiftHandler.removeCallbacks(pixelShiftRunnable)
-        fullScreenHandler.removeCallbacks(fullScreenRunnable)
+        if (::v.isInitialized) v.setOnApplyWindowInsetsListener(null)
+        shizukuAppearanceManager?.stop()
+        shizukuAppearanceManager = null
         if(::v.isInitialized)v.stop()
         if(::wm.isInitialized&&::v.isInitialized)try{wm.removeView(v); overlayAttached=false}catch(_:Exception){}
         super.onDestroy()

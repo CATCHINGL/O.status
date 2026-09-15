@@ -1,13 +1,14 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
+ buildFeatures { aidl = true }
  namespace="com.catch7ng.ostatus"
  compileSdk=35
  defaultConfig {
   applicationId="com.catch7ng.ostatus"
   minSdk=29
   targetSdk=35
-  versionCode = 41
-  versionName = "1.3.0"
+  versionCode = 42
+  versionName = "2.0.0"
  }
  compileOptions {
   sourceCompatibility=JavaVersion.VERSION_17
@@ -19,6 +20,8 @@ android {
  }
 }
 dependencies {
+ implementation("dev.rikka.shizuku:api:13.1.5")
+ implementation("dev.rikka.shizuku:provider:13.1.5")
  implementation("androidx.core:core-ktx:1.15.0")
  implementation("androidx.appcompat:appcompat:1.7.0")
 }

@@ -20,8 +20,8 @@ import kotlin.math.min
 
 class DuoIndicatorView(
     ctx: Context,
-    private val colorMode: String,
-    private val batteryPercentageEnabled: Boolean = false
+    private var colorMode: String,
+    private var batteryPercentageEnabled: Boolean = false
 ) : View(ctx) {
 
     var batteryPercent = 0
@@ -35,6 +35,26 @@ class DuoIndicatorView(
     private var airplaneMode = false
     private var trackedSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID
     private var networkDisplayTracker: NetworkDisplayTracker? = null
+    private var shizukuAutoBlack: Boolean? = null
+
+    fun setShizukuAutoBlack(value: Boolean?) {
+        if (shizukuAutoBlack == value) return
+        shizukuAutoBlack = value
+        invalidate()
+    }
+
+    fun setBatteryPercentageEnabled(value: Boolean) {
+        if (batteryPercentageEnabled == value) return
+        batteryPercentageEnabled = value
+        invalidate()
+    }
+
+    fun setColorMode(value: String) {
+        if (colorMode == value) return
+        colorMode = value
+        shizukuAutoBlack = null
+        invalidate()
+    }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeCap = Paint.Cap.ROUND
@@ -62,7 +82,7 @@ class DuoIndicatorView(
     private fun isBlackIndicator(): Boolean = when (colorMode) {
         "black" -> true
         "white" -> false
-        else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+        else -> shizukuAutoBlack ?: ((resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES)
     }
 
     private fun refreshSystemStates() {

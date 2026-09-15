@@ -17,10 +17,9 @@ object BootPrefs {
             .putInt("size5", normal.getInt("size5", 24))
             .putInt("margin5", normal.getInt("margin5", 7))
             .putInt("y5", normal.getInt("y5", 0))
-            .putString("color_mode", normal.getString("color_mode", "legacy"))
+            .putString("color_mode", normal.getString("color_mode", null) ?: if (normal.contains("black5")) { if (normal.getBoolean("black5", false)) "black" else "white" } else "auto")
             .putBoolean("black5", normal.getBoolean("black5", false))
             .putBoolean("battery_percentage", normal.getBoolean("battery_percentage", false))
-            .putBoolean("hide_in_fullscreen", normal.getBoolean("hide_in_fullscreen", true))
             .apply()
     }
 
@@ -36,21 +35,6 @@ object BootPrefs {
         return if (Build.VERSION.SDK_INT < 24 || um?.isUserUnlocked != false) {
             c.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("duo_enabled", true)
         } else true
-    }
-
-    fun setHideInFullScreen(context: Context, enabled: Boolean) {
-        deviceContext(context).getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .edit().putBoolean("hide_in_fullscreen", enabled).apply()
-    }
-
-    fun hideInFullScreen(context: Context): Boolean {
-        val boot = deviceContext(context).getSharedPreferences(FILE, Context.MODE_PRIVATE)
-        return if (boot.contains("hide_in_fullscreen")) {
-            boot.getBoolean("hide_in_fullscreen", true)
-        } else {
-            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-                .getBoolean("hide_in_fullscreen", true)
-        }
     }
 
     fun setBatteryPercentage(context: Context, enabled: Boolean) {

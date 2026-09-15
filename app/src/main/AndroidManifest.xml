@@ -7,7 +7,9 @@
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
  <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+ <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
  <application android:theme="@style/Theme.App" android:label="O.status" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+  <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
   <activity android:name=".DetailsActivity" android:exported="false"/>
   <activity android:name=".PositionSizeActivity" android:exported="false"/>
   <activity android:name=".MainActivity" android:exported="true">

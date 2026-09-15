@@ -132,7 +132,7 @@ class PositionSizeActivity : AppCompatActivity() {
     }
     private fun refresh(){sizeValue?.text="${prefs.getInt("duo_scale_v3_pct",100)}%";hValue?.text=signed(prefs.getInt("duo_h_offset",0));vValue?.text=signed(prefs.getInt("duo_v_offset_v2",0));updateSelector()}
     private fun signed(v:Int)=if(v>0) "+$v" else "$v"
-    private fun applyNow(){if(prefs.getBoolean("duo_enabled",true)&&Settings.canDrawOverlays(this)){stopService(Intent(this,StatusBarService::class.java));ContextCompat.startForegroundService(this,Intent(this,StatusBarService::class.java))}}
+    private fun applyNow(){if(prefs.getBoolean("duo_enabled",true)&&Settings.canDrawOverlays(this)){ContextCompat.startForegroundService(this,Intent(this,StatusBarService::class.java))}}
     private fun sep()=View(this).apply{setBackgroundColor(separator);layoutParams=LinearLayout.LayoutParams(-1,1).apply{marginStart=dp(16)}}
     private fun dp(v:Int)=(v*d+0.5f).toInt()
 }

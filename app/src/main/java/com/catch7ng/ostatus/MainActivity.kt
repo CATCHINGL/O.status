@@ -18,6 +18,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -25,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private var overlayValue: TextView? = null
     private var phoneValue: TextView? = null
     private var dndValue: TextView? = null
+    private var shizukuValue: TextView? = null
     private var colorValue: TextView? = null
 
     private val dark get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -42,23 +44,24 @@ class MainActivity : AppCompatActivity() {
         buildUi()
     }
 
-    override fun onResume() { super.onResume(); refreshPermissionStates() }
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionStates()
+        ensureOverlayStartedIfEnabled()
+    }
+
+    private fun ensureOverlayStartedIfEnabled() {
+        // The main switch defaults to ON. If the user returns after granting
+        // overlay permission, start the service immediately instead of
+        // requiring an OFF -> ON toggle.
+        if (!prefs.getBoolean("duo_enabled", true)) return
+        if (!Settings.canDrawOverlays(this)) return
+        BootPrefs.setEnabled(this, true)
+        ContextCompat.startForegroundService(this, Intent(this, StatusBarService::class.java))
+    }
 
     private fun buildUi() {
-        val scroll = object : ScrollView(this) {
-            private fun hasScrollableContent(): Boolean =
-                canScrollVertically(-1) || canScrollVertically(1)
-
-            override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
-                if (!hasScrollableContent()) return false
-                return super.onInterceptTouchEvent(ev)
-            }
-
-            override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
-                if (!hasScrollableContent()) return false
-                return super.onTouchEvent(ev)
-            }
-        }.apply {
+        val scroll = ScrollView(this).apply {
             setBackgroundColor(pageColor)
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -114,7 +117,6 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putBoolean("battery_percentage", requested).apply()
                 BootPrefs.setBatteryPercentage(this@MainActivity, requested)
                 if (prefs.getBoolean("duo_enabled", true) && Settings.canDrawOverlays(this@MainActivity)) {
-                    stopService(Intent(this@MainActivity, StatusBarService::class.java))
                     ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, StatusBarService::class.java))
                 }
                 true
@@ -140,6 +142,9 @@ class MainActivity : AppCompatActivity() {
         permissions.addView(separatorView())
         val dndRow = permissionRow("Do Not Disturb Access") { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
         dndValue = dndRow.second; permissions.addView(dndRow.first)
+        permissions.addView(separatorView())
+        val shizukuRow = permissionRow("Shizuku") { handleShizukuClick() }
+        shizukuValue = shizukuRow.second; permissions.addView(shizukuRow.first)
         content.addView(permissions)
 
         sectionTitle(content, "OPTIONS")
@@ -151,7 +156,7 @@ class MainActivity : AppCompatActivity() {
         content.addView(options)
 
         val footer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(0, dp(22), 0, dp(8))
         }
@@ -166,11 +171,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        footer.addView(footerText("V${displayVersion()}"))
-        footer.addView(footerText("  ·  "))
-        footer.addView(footerText("GitHub", true))
-        footer.addView(footerText("  ·  "))
-        footer.addView(footerText("© 2026 CATCH7NG.L"))
+        val footerMain = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        footerMain.addView(footerText("V${displayVersion()}"))
+        footerMain.addView(footerText("  ·  "))
+        footerMain.addView(footerText("GitHub", true))
+        footerMain.addView(footerText("  ·  "))
+        footerMain.addView(footerText("© 2026 CATCH7NG.L"))
+        footer.addView(footerMain)
+        footer.addView(footerText("Dynamic Auto requires Shizuku, a third-party app, to enable status bar colour detection.").apply {
+            textSize = 10.5f
+            setPadding(0, dp(4), 0, 0)
+        })
         content.addView(footer)
 
         scroll.addView(content)
@@ -198,7 +212,8 @@ class MainActivity : AppCompatActivity() {
             else -> "Auto"
         }
         if (prefs.getBoolean("duo_enabled", true) && Settings.canDrawOverlays(this)) {
-            stopService(Intent(this, StatusBarService::class.java))
+            // Ask the existing service to refresh its colour lifecycle in-place.
+            // Avoid stop/start races when switching Black/White back to Auto.
             ContextCompat.startForegroundService(this, Intent(this, StatusBarService::class.java))
         }
     }
@@ -207,6 +222,24 @@ class MainActivity : AppCompatActivity() {
         overlayValue?.let { setPermission(it, Settings.canDrawOverlays(this)) }
         phoneValue?.let { setPermission(it, ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) }
         dndValue?.let { setPermission(it, getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted) }
+        shizukuValue?.let {
+            it.text = ShizukuAppearanceManager.status(this)
+            it.setTextColor(if (ShizukuAppearanceManager.isAuthorized()) secondary else primary)
+        }
+    }
+
+    private fun handleShizukuClick() {
+        when {
+            !ShizukuAppearanceManager.isInstalled(this) -> {
+                val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=moe.shizuku.privileged.api"))
+                try { startActivity(market) } catch (_: Exception) {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api")))
+                }
+            }
+            !ShizukuAppearanceManager.isRunning() -> packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let(::startActivity)
+            !ShizukuAppearanceManager.isAuthorized() -> Shizuku.requestPermission(1001)
+            else -> packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let(::startActivity)
+        }
     }
 
     private fun setPermission(v: TextView, granted: Boolean) {
@@ -294,7 +327,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun displayVersion(): String {
-        val raw = packageManager.getPackageInfo(packageName, 0).versionName ?: "1.3.0"
+        val raw = packageManager.getPackageInfo(packageName, 0).versionName ?: "2.0.0"
         return raw
     }
 
@@ -358,29 +391,5 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults); refreshPermissionStates()
-    }
-}
-
-private class OStatusPreview(context: android.content.Context) : View(context) {
-    var mode: String = "auto"
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-    override fun onDraw(c: Canvas) {
-        super.onDraw(c)
-        val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val black = when(mode) { "black" -> true; "white" -> false; else -> !dark }
-        val active = if (black) Color.BLACK else Color.WHITE
-        val inactive = if (black) Color.rgb(210,210,215) else Color.rgb(70,70,73)
-        val cx = width/2f; val cy = height/2f - 2f; val s = resources.displayMetrics.density
-        val r = 46f*s
-        p.style = Paint.Style.STROKE; p.strokeWidth = 7f*s; p.color = inactive
-        c.drawArc(cx-r,cy-r,cx+r,cy+r,151.5f,237f,false,p)
-        p.color = active
-        c.drawArc(cx-r,cy-r,cx+r,cy+r,151.5f,190f,false,p)
-        p.strokeWidth = 5.5f*s
-        val path=Path(); path.moveTo(cx-19*s,cy-5*s); path.cubicTo(cx-10*s,cy-14*s,cx+10*s,cy-14*s,cx+19*s,cy-5*s); c.drawPath(path,p)
-        val path2=Path(); path2.moveTo(cx-11*s,cy+3*s); path2.cubicTo(cx-5*s,cy-3*s,cx+5*s,cy-3*s,cx+11*s,cy+3*s); c.drawPath(path2,p)
-        p.style=Paint.Style.FILL; c.drawCircle(cx,cy+12*s,3.5f*s,p)
-        val dots=floatArrayOf(-27f,-9f,9f,27f)
-        dots.forEachIndexed { i,x -> p.color=if(i<3) active else inactive; c.drawCircle(cx+x*s, cy+36*s-(if(i==0||i==3) 5*s else 0f),4.5f*s,p) }
     }
 }
