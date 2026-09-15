@@ -9,7 +9,6 @@ A clean and minimal Android status indicator for cellular, Wi-Fi and battery sta
 ## ⚙️ Recommended Setup
 
 For the cleanest O.status experience, it is recommended to hide your phone's original **Wi-Fi, Mobile Signal and Battery icons** from the system status bar.
-<<<<<<< Updated upstream
 
 The method varies depending on your Android device and manufacturer.
 
@@ -61,8 +60,7 @@ No Location, Usage Access or Accessibility permission is required.
 
 ## 🚀 Latest Version
 
-**O.status v1.3.0**
-=======
+**O.status v3.0.0**
 
 The method varies depending on your Android device and manufacturer.
 
@@ -127,8 +125,7 @@ Manual **Black** and **White** modes do not require Shizuku.
 
 ## 🚀 Latest Version
 
-**O.status v2.0.0**
->>>>>>> Stashed changes
+**O.status v3.0.0**
 
 ## 📄 Source Code
 
